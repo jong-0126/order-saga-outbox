@@ -10,3 +10,8 @@ spring:
     properties:
       hibernate.format_sql: true
   h2.console.enabled: true
+
+app:
+  outbox:
+    publish-interval-ms: 1000   # 1초마다 발행
+    batch-size: 100
