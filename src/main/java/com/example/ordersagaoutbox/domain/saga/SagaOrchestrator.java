@@ -9,6 +9,8 @@ import com.example.ordersagaoutbox.domain.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
+
 @Service
 @RequiredArgsConstructor
 public class SagaOrchestrator {
@@ -16,33 +18,34 @@ public class SagaOrchestrator {
     private final InventoryService inventoryService;
     private final PaymentService paymentService;
 
-
     public OrderEntity placeOrder(CreateOrderRequest req, String idemKey){
-        // 1) 주문 생성(멱등)
+        // 주문 생성(멱등)
         OrderEntity order = orderService.createIfAbsent(req, idemKey);
 
         // 이미 진행된 주문이면 현재 상태 반환
         if (order.getStatus() != OrderStatus.NEW) return order;
 
         try {
-            // 2) 재고 예약
+            // 1) 재고 예약
             inventoryService.reserve(order.getProductId(), order.getQuantity());
-            orderService.markStatus(order.getId(), OrderStatus.INVENTORY_RESERVED);
+            orderService.transition(order.getId(), OrderStatus.INVENTORY_RESERVED, "InventoryReserved",
+                Map.of("orderId", order.getId(), "productId", order.getProductId(), "qty", order.getQuantity()));
 
-            // 3) 결제 승인
+            // 2) 결제 승인
             paymentService.authorize(order.getId(), order.getAmount());
-            orderService.markStatus(order.getId(), OrderStatus.PAYMENT_AUTHORIZED);
+            orderService.transition(order.getId(), OrderStatus.PAYMENT_AUTHORIZED, "PaymentAuthorized",
+                Map.of("orderId", order.getId(), "amount", order.getAmount()));
 
-            // 4) 완료
-            orderService.markStatus(order.getId(), OrderStatus.COMPLETED);
+            // 3) 완료
+            orderService.transition(order.getId(), OrderStatus.COMPLETED, "OrderCompleted",
+                Map.of("orderId", order.getId()));
             return order;
+
         } catch (Exception ex) {
-            // 보상 트랜잭션(재고 원복)
-            try {
-                inventoryService.release(order.getProductId(), order.getQuantity());
-            } catch (Exception ignore) {}
-            orderService.markStatus(order.getId(), OrderStatus.CANCELLED);
-            throw ex; // 컨트롤러로 에러 전달
+            try { inventoryService.release(order.getProductId(), order.getQuantity()); } catch (Exception ignore) {}
+            orderService.transition(order.getId(), OrderStatus.CANCELLED, "OrderCancelled",
+                Map.of("orderId", order.getId(), "reason", ex.getMessage()));
+            throw ex;
         }
     }
 }
