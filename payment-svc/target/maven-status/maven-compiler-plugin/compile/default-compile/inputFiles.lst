@@ -1,0 +1,8 @@
+/app/payment-svc/src/main/java/com/example/ordersagaoutbox/PaymentApplication.java
+/app/payment-svc/src/main/java/com/example/ordersagaoutbox/domain/entity/PaymentAttemptEntity.java
+/app/payment-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/controller/OutboxController.java
+/app/payment-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/entity/OutboxEntity.java
+/app/payment-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/repository/OutboxRepository.java
+/app/payment-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/service/OutboxService.java
+/app/payment-svc/src/main/java/com/example/ordersagaoutbox/domain/repostiroy/PaymentAttemptRepository.java
+/app/payment-svc/src/main/java/com/example/ordersagaoutbox/domain/service/PaymentService.java

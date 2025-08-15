@@ -1,0 +1,9 @@
+com/example/ordersagaoutbox/domain/outbox/repository/OutboxRepository.class
+com/example/ordersagaoutbox/domain/outbox/entity/OutboxEntity$Status.class
+com/example/ordersagaoutbox/domain/outbox/controller/OutboxController.class
+com/example/ordersagaoutbox/domain/service/InventoryService.class
+com/example/ordersagaoutbox/domain/outbox/service/OutboxService.class
+com/example/ordersagaoutbox/domain/outbox/entity/OutboxEntity.class
+com/example/ordersagaoutbox/domain/entity/InventoryEntity.class
+com/example/ordersagaoutbox/InventoryApplication.class
+com/example/ordersagaoutbox/domain/repository/InventoryRepository.class

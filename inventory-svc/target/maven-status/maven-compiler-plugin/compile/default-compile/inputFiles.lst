@@ -1,0 +1,8 @@
+/app/inventory-svc/src/main/java/com/example/ordersagaoutbox/InventoryApplication.java
+/app/inventory-svc/src/main/java/com/example/ordersagaoutbox/domain/entity/InventoryEntity.java
+/app/inventory-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/controller/OutboxController.java
+/app/inventory-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/entity/OutboxEntity.java
+/app/inventory-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/repository/OutboxRepository.java
+/app/inventory-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/service/OutboxService.java
+/app/inventory-svc/src/main/java/com/example/ordersagaoutbox/domain/repository/InventoryRepository.java
+/app/inventory-svc/src/main/java/com/example/ordersagaoutbox/domain/service/InventoryService.java

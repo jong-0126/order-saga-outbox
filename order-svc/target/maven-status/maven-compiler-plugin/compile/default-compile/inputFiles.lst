@@ -1,0 +1,11 @@
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/OrderApplication.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/controller/OrderController.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/dto/CreateOrderRequest.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/entity/OrderEntity.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/entity/OrderStatus.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/controller/OutboxController.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/entity/OutboxEntity.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/repository/OutboxRepository.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/outbox/service/OutboxService.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/repository/OrderRepository.java
+/app/order-svc/src/main/java/com/example/ordersagaoutbox/domain/service/OrderService.java
