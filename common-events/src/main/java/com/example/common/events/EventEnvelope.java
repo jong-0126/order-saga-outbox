@@ -1,36 +1,22 @@
 package com.example.common.events;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import java.time.Instant;
 
-public class EventEnvelope<T> {
-    private String type;
-    private String correlationId;
-    private T payload;
-    private Instant createdAt;
-
-    public EventEnvelope() {} // Jackson용
-
-    public EventEnvelope(String type, String correlationId, T payload, Instant createdAt) {
-        this.type = type;
-        this.correlationId = correlationId;
-        this.payload = payload;
-        this.createdAt = createdAt;
-    }
+@Getter @Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class EventEnvelope<T> {             // 이벤트 '봉투' (제네릭 T = payload 타입)
+    private String type;                    // 이벤트 이름
+    private String correlationId;           // 상관키(흐름 추적용)
+    private T payload;                      // 실제 데이터(타입 안정)
+    private Instant createdAt;              // 생성 시각
 
     public static <T> EventEnvelope<T> of(String type, String corr, T payload) {
         return new EventEnvelope<>(type, corr, payload, Instant.now());
     }
-
-    // getters/setters
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-
-    public String getCorrelationId() { return correlationId; }
-    public void setCorrelationId(String correlationId) { this.correlationId = correlationId; }
-
-    public T getPayload() { return payload; }
-    public void setPayload(T payload) { this.payload = payload; }
-
-    public Instant getCreatedAt() { return createdAt; }
-    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }
