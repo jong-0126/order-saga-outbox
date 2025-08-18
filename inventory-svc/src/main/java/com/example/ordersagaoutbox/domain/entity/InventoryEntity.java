@@ -13,6 +13,7 @@ public class InventoryEntity {
     @Id
     private String productId;
     private int quantity;
+    private Instant createdAt;
     private Instant updatedAt;
 
     @Version
