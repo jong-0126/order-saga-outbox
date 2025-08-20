@@ -1,21 +1,15 @@
 package com.example.ordersagaoutbox.domain.service;
 
-import com.example.ordersagaoutbox.domain.entity.PaymentAttemptEntity;
-import com.example.ordersagaoutbox.domain.repostiroy.PaymentAttemptRepository;
-import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-@Service
-@RequiredArgsConstructor
+@Service @Slf4j
 public class PaymentService {
-    private final PaymentAttemptRepository paymentAttemptRepository;
-
     @Transactional
     public void authorize(String orderId, long amount){
-        // 데모 규칙: 홀수 금액이면 실패, 짝수 금액이면 승인
-        boolean ok = (amount % 2 == 0);
-        paymentAttemptRepository.save(PaymentAttemptEntity.of(orderId, amount, ok ? "AUTHORIZED":"FAILED"));
-        if (!ok) throw new IllegalStateException("Payment failed (demo rule)");
+        // 데모: 0 이하 금액이면 실패 던지기
+        if (amount <= 0) throw new IllegalStateException("invalid amount");
+        log.info("Payment authorized. orderId={}, amount={}", orderId, amount);
     }
 }
