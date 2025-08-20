@@ -14,9 +14,13 @@ import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-@Component @RequiredArgsConstructor
+@Component
+@RequiredArgsConstructor
 public class InventoryListener {
-    private final ObjectMapper om; private final InventoryService inventory; private final OutboxService outbox;
+    private final ObjectMapper om;
+    private final InventoryService inventory;
+    private final OutboxService outbox;
+
     @KafkaListener(topics="${app.kafka.topic}", groupId="inventory-svc")
     @Transactional
     public void onMessage(String raw) throws Exception {
