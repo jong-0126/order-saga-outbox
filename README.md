@@ -1,217 +1,253 @@
-# Order Saga Outbox (Spring Boot × Kafka)
+# Order Saga Outbox (Spring Boot + Kafka)
 
-주문 → 재고 → 결제를 **이벤트**로 이어서 처리하는 **사가(Choreography) + Outbox 패턴** 예제입니다.
-분산 트랜잭션(2PC) 없이 **최종 일관성**을 달성하고, 이벤트 유실을 Outbox로 막습니다.
+**주문 → 재고 → 결제**를 이벤트로 이어붙인 **사가(Choreography) + Outbox 패턴** 예제입니다.
+각 서비스는 자신 DB 트랜잭션 안에서 **비즈니스 변경 + 이벤트 기록(Outbox)** 를 원자적으로 커밋하고,
+별도의 **퍼블리셔(@Scheduled)** 가 Outbox의 `PENDING` 레코드를 **Kafka** 로 발행합니다.
+최종적으로 주문 서비스가 결과 이벤트를 수신해 **COMPLETED / CANCELLED** 로 상태를 전이합니다.
 
-## 아키텍처
-
-```
-Client ──POST /orders────────▶ [order-svc]
-  DB Tx: 주문 저장 + Outbox(OrderCreated)
-           │
-           └─[OutboxPublisher @Scheduled]→ Kafka topic: saga.events
-                 │
-                 ├─▶ [inventory-svc] : OrderCreated 수신 → reserve()
-                 │        └─ Outbox: InventoryReserved/Failed → Kafka
-                 │
-                 └─▶ [payment-svc]  : InventoryReserved 수신 → authorize()
-                          └─ Outbox: PaymentAuthorized/Failed → Kafka
-
-[order-svc]는 PaymentAuthorized/Failed 수신 → 주문 상태 전이(COMPLETED/CANCELLED)
-```
-
-## 기술 스택
-
-* Spring Boot 3, Java 17, Maven 멀티모듈
-* Spring Web / Data JPA / Validation / Kafka
-* H2(in-memory), Lombok(선택)
-* Docker Compose(Kafka/Zookeeper)
+---
 
 ## 모듈 구조
 
 ```
-root (packaging: pom)
- ├─ common-events        # 이벤트 봉투/타입/페이로드 DTO (POJO)
- ├─ order-svc            # 주문 API + 결과 수신
- ├─ inventory-svc        # 재고 예약 + 보상
- └─ payment-svc          # 결제 승인/실패
+order-saga-outbox
+├── pom.xml                # parent (dependencyManagement, pluginManagement)
+├── common-events          # 이벤트 봉투/타입/페이로드 DTO (Lombok POJO)
+├── order-svc              # 주문 API, 결과 리스너, Outbox 퍼블리셔
+├── inventory-svc          # OrderCreated 리스너 → 재고 예약 → Outbox
+└── payment-svc            # InventoryReserved 리스너 → 결제 승인/실패 → Outbox
 ```
 
 ---
 
-## 핵심 설계 포인트
+## 기술 스택
 
-* **Outbox 패턴**: 비즈니스 업데이트와 **같은 DB 트랜잭션**으로 이벤트를 `outbox` 테이블에 JSON으로 기록 → 별도 퍼블리셔가 Kafka로 전송 → 유실 방지.
-* **사가(Choreography)**: 각 서비스가 **이벤트를 구독**하고 자신의 트랜잭션으로 처리, 실패 시 **보상 이벤트**로 롤백.
-* **멱등성**: 주문 생성에 **Idempotency-Key** 헤더 지원(중복 요청 방지).
-* **타입드 이벤트**: `EventEnvelope<T>` + payload DTO로 스키마 안정성 확보.
-
----
-
-## 빠른 실행(스모크 테스트)
-
-### 1) 선행 조건
-
-* JDK 17, Maven 3.9+
-* Docker Desktop (또는 docker compose)
-
-### 2) Kafka/Zookeeper 띄우기 (예시 `docker-compose.yml`)
-
-> 이미 갖고 있는 compose가 있으면 그걸 쓰세요. 핵심은 **내부: `kafka:29092`**, \*\*외부: `localhost:9092`\*\*입니다.
-
-```yaml
-services:
-  zookeeper:
-    image: bitnami/zookeeper:3.9
-    environment:
-      - ALLOW_ANONYMOUS_LOGIN=yes
-    ports: ["2181:2181"]
-
-  kafka:
-    image: bitnami/kafka:3.7
-    depends_on: [zookeeper]
-    ports: ["9092:9092"]
-    environment:
-      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
-      - KAFKA_BROKER_ID=1
-      - ALLOW_PLAINTEXT_LISTENER=yes
-      - KAFKA_CFG_LISTENERS=INTERNAL://:29092,EXTERNAL://:9092
-      - KAFKA_CFG_ADVERTISED_LISTENERS=INTERNAL://kafka:29092,EXTERNAL://localhost:9092
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
-      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL
-```
-
-```bash
-docker compose up -d
-```
-
-### 3) 서비스 실행
-
-루트에서:
-
-```bash
-# 전체 빌드
-mvn -q -DskipTests clean package
-
-# 개별 실행(별 터미널 3개)
-mvn -q -pl order-svc spring-boot:run
-mvn -q -pl inventory-svc spring-boot:run
-mvn -q -pl payment-svc spring-boot:run
-```
-
-### 4) 재고 시드 & 주문 생성
-
-```bash
-# 재고 시드
-curl -X POST "http://localhost:8082/inventory/seed?productId=p-100&qty=10"
-
-# 주문 생성
-curl -X POST http://localhost:8081/orders \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: demo-401" \
-  -d '{"productId":"p-100","quantity":2,"amount":20000}'
-```
-
-### 5) 이벤트 확인(옵션)
-
-```bash
-# 컨테이너 안에서 콘솔 소비자 실행
-docker compose exec kafka bash -lc \
- "kafka-console-consumer.sh --bootstrap-server kafka:29092 --topic saga.events --from-beginning"
-```
-
-`OrderCreated → InventoryReserved → PaymentAuthorized` 순으로 보이면 OK.
+* Spring Boot 3 (Web, Data JPA, Validation, Scheduling)
+* Kafka (spring-kafka)
+* H2 (in-memory DB) / JPA(Hibernate)
+* Jackson, Lombok
+* Maven 멀티모듈
 
 ---
 
-## 주요 API
+## 아키텍처 한눈에 보기 (ASCII)
 
-### order-svc
+```
+Client
+  │  POST /orders (Idempotency-Key?)
+  ▼
+order-svc ──[DB 트랜잭션]──> orders: NEW
+    │                         outbox: PENDING (OrderCreated)
+    ├── @Scheduled Publisher ────────► Kafka topic: saga.events
+    │
+    └── @KafkaListener (PaymentAuthorized/Failed, InventoryFailed)
+          └─ transition(): NEW → COMPLETED / CANCELLED
+             + outbox 최종 이벤트 (OrderCompleted/Cancelled)
+                (퍼블리셔가 Kafka로 발행)
 
-* `POST /orders`
+inventory-svc (@KafkaListener: OrderCreated)
+  ├─ reserve() 성공 → outbox: InventoryReserved (PENDING)
+  ├─ 실패          → outbox: InventoryFailed  (PENDING)
+  └─ @Scheduled Publisher → Kafka
 
-  * Header: `Idempotency-Key`(선택)
-  * Body: `{"productId":"p-100","quantity":2,"amount":20000}`
-  * 결과: `OrderEntity`(NEW) + Outbox에 `OrderCreated`
+payment-svc (@KafkaListener: InventoryReserved)
+  ├─ authorize() 성공 → outbox: PaymentAuthorized (PENDING)
+  ├─ 실패             → outbox: PaymentFailed     (PENDING)
+  └─ @Scheduled Publisher → Kafka
+```
 
-### inventory-svc (테스트 편의)
-
-* `POST /inventory/seed?productId=&qty=`
-* `GET /inventory/{productId}`
-* `POST /inventory/reserve?productId=&qty=`
-* `POST /inventory/release?productId=&qty=`
+> 핵심: **비즈니스 변경 + Outbox INSERT** 는 같은 DB 트랜잭션,
+> Kafka 발행은 **분리된 스케줄러**가 수행(유실/중복 방지).
 
 ---
 
-## 이벤트 스키마
-
-### EventEnvelope (POJO)
-
-```java
-class EventEnvelope<T> {
-  String type;           // ex) "OrderCreated"
-  String correlationId;  // ex) orderId
-  T payload;             // ex) OrderCreatedPayload
-  Instant createdAt;
-}
-```
-
-### 예시 JSON
+## 이벤트 계약 (Envelope & Payload)
 
 ```json
 {
-  "type": "OrderCreated",
-  "correlationId": "ord-123",
-  "payload": {
-    "orderId": "ord-123",
-    "productId": "p-100",
-    "quantity": 2,
-    "amount": 20000,
-    "v": "v1"
-  },
-  "createdAt": "2025-08-15T04:25:30.123Z"
+  "type": "OrderCreated",              // 이벤트 타입 문자열(상수로 관리)
+  "correlationId": "ORDER-12345",      // 흐름 추적 키(주로 orderId)
+  "createdAt": "2025-08-20T06:00:00Z",
+  "payload": { /* 타입별 DTO 스키마 */ }
 }
 ```
 
-### EventTypes
+### 주요 타입
 
-* `OrderCreated`
-* `InventoryReserved`, `InventoryFailed`
-* `PaymentAuthorized`, `PaymentFailed`
-* `OrderCancelled`(옵션)
+* `OrderCreated` → (inventory 처리) → `InventoryReserved` | `InventoryFailed`
+* `InventoryReserved` → (payment 처리) → `PaymentAuthorized` | `PaymentFailed`
+* 결과 수신 후 주문 서비스가 최종 전이:
 
-### Payload DTO (요약)
-
-* `order.OrderCreatedPayload(orderId, productId, quantity, amount, v)`
-* `inventory.InventoryReservedPayload(orderId, productId, qty, v)`
-* `payment.PaymentAuthorizedPayload(orderId, amount, v)`
-* 각 `FailedPayload(orderId, reason, v)`
+  * `OrderCompleted` | `OrderCancelled`  *(들어온 타입을 그대로 재발행하지 않음)*
 
 ---
 
-## Outbox 테이블 (JPA)
+## 실행 방법
 
-* 컬럼: `id, aggregateId(orderId), type, payload(JSON), status(PENDING|SENT|FAILED), attempts, lastError, createdAt, sentAt`
-* 퍼블리셔: `@Scheduled`가 `PENDING`을 읽어 Kafka로 전송 → 성공 시 `SENT`
+### 0) 필수 도구
+
+* JDK 17
+* Docker & Docker Compose
+* postman
+
+### Kafka 기동
+
+```bash
+docker compose up -d
+# 또는 docker-compose up -d
+```
+
+> `KAFKA_BOOTSTRAP` 환경 값은 컨테이너 내부면 `kafka:29092`, 로컬 실행이면 `localhost:9092` 로 맞춰주세요.
+
+기본 포트(예시):
+
+* order-svc: `8080`
+* inventory-svc: `8081`
+* payment-svc: `8082`
 
 ---
 
-## 설정 포인트
+## 빠른 시나리오 테스트
 
-* 모든 서비스 `application.yml`:
+1. **재고 시드** (인벤토리 수량 가산)
 
-  * `spring.kafka.bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}`
-  * `app.kafka.topic: saga.events`
-  * `app.outbox.publish-interval-ms: 1000`
-* 로컬 실행: `localhost:9092`
-* 컨테이너 내부 통신: `kafka:29092`
+```bash
+curl -XPOST "http://localhost:8081/inventory/seed?productId=P1&qty=10"
+```
+
+2. **주문 생성**
+
+```bash
+curl -i -XPOST "http://localhost:8080/orders" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: idem-001" \
+  -d '{ "productId":"P1", "quantity":2, "amount":20000 }'
+# 202 Accepted + Location: /orders/{id}
+```
+
+3. **상태 조회**
+
+```bash
+curl -s "http://localhost:8080/orders/{id}"
+# NEW → (이벤트가 흐르면) COMPLETED 또는 CANCELLED
+```
+
+4. **H2 콘솔** (서비스별)
+
+* `http://localhost:8080/h2-console` (order)
+* `http://localhost:8081/h2-console` (inventory)
+* `http://localhost:8082/h2-console` (payment)
+
+  * JDBC URL 예: `jdbc:h2:mem:testdb`  (설정에 따름)
+  * 사용자/비번: 기본은 빈 값 또는 `sa`
+
+5. **Outbox 상태 확인 (order 예시)**
+
+```sql
+SELECT type, status, attempts, created_at, sent_at
+FROM OUTBOX ORDER BY id DESC;
+-- PENDING → SENT 로 바뀌면 Kafka 발행 성공
+```
+
+---
+
+## API 요약
+
+### 주문
+
+* `POST /orders`
+
+  * Request: `{"productId": "...", "quantity": 2, "amount": 20000}`
+  * Headers: `Idempotency-Key` (중복 생성 방지, 선택)
+  * Response: `202 Accepted`, `Location: /orders/{id}`, `X-Correlation-Id: {id}`
+* `GET /orders/{id}`
+
+  * Response: `200 OK` (DTO) | `404 Not Found`
+
+### 인벤토리 (데모용)
+
+* `POST /inventory/seed?productId=P1&qty=10` → 수량 가산(없으면 생성)
+
+---
+
+## 설정 예시 (`application.yml` 공통 패턴)
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL;DB_CLOSE_DELAY=-1
+    driverClassName: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+
+app:
+  kafka:
+    topic: saga.events
+  outbox:
+    publish-interval-ms: 1000
+```
+---
+
+## 멱등성 / 상태 전이
+
+* **Idempotency-Key** 로 동일 주문 요청 **중복 생성 방지** (DB `idempotency_key` Unique 권장)
+* **상태 전이 가드**:
+
+  * 이미 해당 상태면 `transition()` 조기 반환(루프/중복 방지)
+  * `InventoryFailed`/`PaymentFailed` 수신 시 **항상 CANCELLED**
 
 ---
 
 ## 트러블슈팅 메모
 
-* **파라미터 이름 에러**: 컨트롤러에서 `@PathVariable("productId")`, `@RequestHeader(name="Idempotency-Key")`처럼 **이름 명시**.
-  (또는 Maven `maven-compiler-plugin`에 `<parameters>true</parameters>` 설정)
-* **YAML 파싱 오류**: `${KAFKA_BOOTSTRAP:localhost:9092}`는 **여러 줄 스타일**로 쓰기(한 줄 flow map 금지).
-* **멀티모듈 버전 오류**: 루트 POM에서 `dependencyManagement`/`pluginManagement`로 **중앙관리**하고 자식에서 버전 생략.
-* **Kafka 접속 불가**: 내부와 외부 리스너/주소(29092/9092) 구분 확인.
+1. **주문이 NEW에서 안 바뀜**
+
+   * 각 서비스 메인 클래스에 `@EnableScheduling` 있는지
+   * `spring.kafka.bootstrap-servers` / `app.kafka.topic` **세 서비스가 동일**한지
+   * order 결과 리스너가 **최종 타입(OrderCompleted/Cancelled)** 으로 발행하는지
+
+2. **Outbox가 계속 PENDING**
+
+   * 퍼블리셔가 안 돎 → `@EnableScheduling` 확인
+   * Kafka 연결 실패 → `KAFKA_BOOTSTRAP` 환경변수/포트 확인
+
+3. **이벤트 루프/폭주**
+
+   * 들어온 타입을 그대로 재발행하지 말 것
+   * 결과 알림은 **최종 타입**으로만 발행 + 상태 가드
+
+4. **컨트롤러 파라미터 바인딩 에러**
+
+   * 컴파일러 옵션 `-parameters` (Maven `maven-compiler-plugin`에 `<release>17</release>`)
+
+5. **POM 에러**
+
+   * 멀티모듈: parent `dependencyManagement/pluginManagement` 설정, 하위 POM에서 버전 생략
+   * 내부 모듈 의존 시 `<version>${project.version}</version>` 또는 생략(부모 관리)
+
+6. **record 사용 시 컴파일 실패**
+
+   * JDK 17 미설치/설정 문제 → POJO(Lombok)로 대체
+
+7. **.gitignore**
+
+   * `target/`, `**/target/` 커밋 금지 (Wrapper는 커밋)
+
+---
+
+## 내가 배운 것 
+
+* **사가(Choreography) + Outbox + Kafka** 로 **최종 일관성** 구현
+* DB 트랜잭션 안에서 **비즈니스 변경 + 이벤트 기록** 원자적 커밋
+* **Idempotency-Key** 로 중복 주문 방지
+* **타입드 이벤트**(Envelope + DTO)로 스키마 안정성
+* 퍼블리셔/리스너 분리, **관측성**(Correlation-Id, SUB/PUB 로그)
+* 멀티모듈 POM, JDK17, Spring 3, H2 콘솔, ResponseEntity/ProblemDetail 등 실전 운영 팁 습득
