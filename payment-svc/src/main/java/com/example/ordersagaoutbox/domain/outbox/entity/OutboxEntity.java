@@ -1,34 +1,35 @@
 package com.example.ordersagaoutbox.domain.outbox.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.Setter;
-import org.springframework.stereotype.Service;
+import lombok.*;
 
 import java.time.Instant;
-import java.util.UUID;
 
 @Entity
-@Table(name = "order_outbox")
-@Getter @Setter
+@Table(name = "payment_outbox")
+@Getter @Setter @Builder @AllArgsConstructor @NoArgsConstructor
 public class OutboxEntity {
     public enum Status { PENDING, SENT, FAILED }
 
-    @Id private String id;
-    @Column(nullable=false) private String aggregateId; // orderId
-    @Column(nullable=false) private String eventType;
-    @Lob @Column(nullable=false) private String payload; // JSON
-    @Enumerated(EnumType.STRING) @Column(nullable=false) private Status status;
-    @Column(nullable=false) private Instant createdAt;
-    private Instant sentAt;
-    @Column(length=2000) private String lastError;
-    @Column(nullable=false) private int attempts;
+    @Id @GeneratedValue(strategy=GenerationType.IDENTITY)
+    private Long id;
 
-    public static OutboxEntity pending(String aggregateId, String eventType, String payload){
-        OutboxEntity e = new OutboxEntity();
-        e.id = UUID.randomUUID().toString();
-        e.aggregateId = aggregateId; e.eventType = eventType; e.payload = payload;
-        e.status = Status.PENDING; e.createdAt = Instant.now(); e.attempts = 0;
-        return e;
+    private String aggregateId;     // orderId 등 상관키
+    private String type;            // EventTypes 값
+    @Lob @Column(columnDefinition="TEXT")
+    private String payload;         // 이벤트 JSON 문자열
+
+    @Enumerated(EnumType.STRING)
+    private Status status;          // 현재 상태
+
+    private int attempts;           // 전송 시도 횟수
+    private String lastError;       // 마지막 오류 메세지
+    private Instant createdAt;      // 생성 시각
+    private Instant sentAt;         // 성공 발행 시각
+
+    @PrePersist                     // INSERT 직전 호출
+    public void pre(){
+        if(createdAt==null) createdAt=Instant.now();    // 생성시각
+        if(status==null) status=Status.PENDING;         // 기본 상태는 PENDING
     }
 }

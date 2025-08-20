@@ -1,4 +1,4 @@
-package com.example.ordersagaoutbox.infra.kafka;
+package com.example.ordersagaoutbox.kafka;
 
 import com.example.common.events.EventEnvelope;
 import com.example.common.events.EventTypes;

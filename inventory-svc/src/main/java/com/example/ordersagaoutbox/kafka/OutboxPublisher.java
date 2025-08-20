@@ -1,4 +1,4 @@
-package com.example.ordersagaoutbox.infra.kafka;
+package com.example.ordersagaoutbox.kafka;
 
 import com.example.ordersagaoutbox.domain.outbox.entity.OutboxEntity;
 import com.example.ordersagaoutbox.domain.outbox.repository.OutboxRepository;
